@@ -44,7 +44,6 @@ jobs:
             "https://api.github.com/users/shabajeric91-sketch/repos?per_page=100" | \
             jq -r '[.[] | select(.name | test("^eryai|^ery-ai")) | select(.name != "eryai-core-schema") | .name] | @json')
           echo "repos=$REPOS" >> $GITHUB_OUTPUT
-          echo "Found repos: $REPOS"
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -71,7 +70,6 @@ jobs:
       
       - name: Push to ${{ matrix.repo }}
         run: |
-          echo "Pushing to ${{ matrix.repo }}..."
           git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/shabajeric91-sketch/${{ matrix.repo }}.git spoke-repo
           cd spoke-repo
           
@@ -80,68 +78,23 @@ jobs:
           cp ../artifacts/templates/jsconfig.json jsconfig.json
           
           if [ -f "package.json" ]; then
-            DUPLICATE_COUNT=$(grep -c '"devDependencies"' package.json || echo "0")
-            
-            if [ "$DUPLICATE_COUNT" -gt "1" ]; then
-              echo "package.json has duplicate devDependencies, restoring..."
-              FOUND_CLEAN="false"
-              for commit in $(git log --oneline -50 --format="%H" -- package.json); do
-                COMMIT_DUPES=$(git show "$commit:package.json" 2>/dev/null | grep -c '"devDependencies"' || echo "0")
-                if [ "$COMMIT_DUPES" -eq "1" ]; then
-                  echo "Found clean package.json at $commit"
-                  git show "$commit:package.json" > package.json
-                  FOUND_CLEAN="true"
+            DUPES=$(grep -c '"devDependencies"' package.json || echo "0")
+            if [ "$DUPES" -gt "1" ]; then
+              for c in $(git log -50 --format="%H" -- package.json); do
+                D=$(git show "$c:package.json" 2>/dev/null | grep -c '"devDependencies"' || echo "0")
+                if [ "$D" -eq "1" ]; then
+                  git show "$c:package.json" > package.json
                   break
                 fi
               done
-              
-              if [ "$FOUND_CLEAN" = "false" ]; then
-                echo "No clean version found, creating minimal package.json..."
-                echo '{"name":"${{ matrix.repo }}","version":"1.0.0","dependencies":{},"devDependencies":{}}' > package.json
-              fi
             fi
-            
-            node -e "const fs=require('fs');try{const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.devDependencies=p.devDependencies||{};p.devDependencies.typescript='^5.0.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');console.log('package.json updated');}catch(e){console.error(e.message);}"
+            node -e "const f=require('fs'),p=JSON.parse(f.readFileSync('package.json'));p.devDependencies=p.devDependencies||{};p.devDependencies.typescript='^5.0.0';f.writeFileSync('package.json',JSON.stringify(p,null,2));"
           fi
           
           mkdir -p .github/workflows
-          cat > .github/workflows/ci.yml << 'CIEOF'
-name: CI Validation
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-jobs:
-  validate:
-    name: Type Check and Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install dependencies
-        run: npm install
-      - name: Run Type Check
-        run: |
-          if [ -f "jsconfig.json" ]; then
-            npx tsc --project jsconfig.json --skipLibCheck 2>&1 | head -50 > type-errors.log
-            if [ -s type-errors.log ] && grep -q "error TS" type-errors.log; then
-              cat type-errors.log
-              exit 1
-            fi
-          fi
-      - name: Build
-        run: |
-          if grep -q '"build"' package.json 2>/dev/null; then
-            npm run build
-          fi
-CIEOF
+          cp ../artifacts/templates/ci.yml .github/workflows/ci.yml
           
           git config user.name "EryAI Schema Bot"
           git config user.email "bot@eryai.tech"
           git add .
-          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: sync schema, jsconfig and CI from eryai-core-schema" && git push)
-          echo "Done with ${{ matrix.repo }}"
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: sync from eryai-core-schema" && git push)
