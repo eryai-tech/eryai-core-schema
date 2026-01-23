@@ -36,6 +36,7 @@ jobs:
         run: |
           git config user.name "EryAI Schema Bot"
           git config user.email "bot@eryai.tech"
+          git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/eryai-tech/eryai-core-schema.git
           git add types/
           git diff --quiet && git diff --staged --quiet || (git commit -m "chore: update database types from supabase" && git push)
       
