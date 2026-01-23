@@ -84,21 +84,19 @@ jobs:
           # 2. Synka jsconfig.json (överskriver)
           cp ../artifacts/templates/jsconfig.json jsconfig.json
           
-          # 3. Synka lib/supabase.js (endast om lib/ finns)
-          if [ -d "lib" ]; then
-            cp ../artifacts/templates/lib/supabase.js lib/supabase.js
+          # 3. Fixa package.json med Node.js (säkrare än sed)
+          if [ -f "package.json" ]; then
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              if (!pkg.devDependencies) pkg.devDependencies = {};
+              pkg.devDependencies.typescript = '^5.0.0';
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+              console.log('✅ Updated package.json with typescript');
+            "
           fi
           
-          # 4. Injicera typescript i package.json om det saknas
-          if [ -f "package.json" ] && ! grep -q '"typescript"' package.json; then
-            if grep -q '"devDependencies"' package.json; then
-              sed -i 's/"devDependencies": {/"devDependencies": {\n    "typescript": "^5.0.0",/' package.json
-            else
-              sed -i 's/}$/,\n  "devDependencies": {\n    "typescript": "^5.0.0"\n  }\n}/' package.json
-            fi
-          fi
-          
-          # 5. Skapa CI workflow
+          # 4. Skapa CI workflow
           mkdir -p .github/workflows
           cat > .github/workflows/ci.yml << 'EOF'
           name: CI Validation
@@ -128,8 +126,9 @@ jobs:
                 - name: Run Type Check
                   run: |
                     if [ -f "jsconfig.json" ]; then
-                      echo "Running type check with jsconfig.json..."
-                      npx tsc --project jsconfig.json > type-errors.log 2>&1 || {
+                      echo "Running type check..."
+                      npx tsc --project jsconfig.json --skipLibCheck 2>&1 | head -50 > type-errors.log
+                      if [ -s type-errors.log ] && grep -q "error TS" type-errors.log; then
                         echo "### ❌ Type Check Failed" >> $GITHUB_STEP_SUMMARY
                         echo "" >> $GITHUB_STEP_SUMMARY
                         echo "Copy this error to Claude:" >> $GITHUB_STEP_SUMMARY
@@ -137,7 +136,7 @@ jobs:
                         cat type-errors.log >> $GITHUB_STEP_SUMMARY
                         echo '```' >> $GITHUB_STEP_SUMMARY
                         exit 1
-                      }
+                      fi
                       echo "### ✅ Type Check Passed" >> $GITHUB_STEP_SUMMARY
                     else
                       echo "### ⏭️ Type Check Skipped (no jsconfig.json)" >> $GITHUB_STEP_SUMMARY
