@@ -30,7 +30,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       
       - name: Format Types
-        run: node scripts/format-types.js
+        run: node scripts/format-types.js || echo "No format script found, skipping"
       
       - name: Commit to Hub
         run: |
@@ -42,10 +42,10 @@ jobs:
       
       - name: Get EryAI repos
         id: get-repos
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          REPOS=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
-            "https://api.github.com/orgs/eryai-tech/repos?per_page=100" | \
-            jq -r '[.[] | select(.name | test("^eryai|^ery-ai")) | select(.name != "eryai-core-schema") | .name] | @json')
+          REPOS=$(gh repo list eryai-tech --limit 100 --json name -q '[.[].name | select(test("^eryai|^ery-ai")) | select(. != "eryai-core-schema")]')
           echo "repos=$REPOS" >> $GITHUB_OUTPUT
       
       - name: Upload artifacts
@@ -81,15 +81,18 @@ jobs:
           cp ../artifacts/templates/jsconfig.json jsconfig.json
           
           if [ -f "package.json" ]; then
-            DUPES=$(grep -c '"devDependencies"' package.json || echo "0")
-            if [ "$DUPES" -gt "1" ]; then
-              echo "Fixing corrupted package.json..."
-              REPO_NAME="${{ matrix.repo }}"
-              echo "{\"name\":\"$REPO_NAME\",\"version\":\"1.0.0\",\"dependencies\":{\"@supabase/supabase-js\":\"^2.39.0\"},\"devDependencies\":{\"typescript\":\"^5.0.0\"}}" > package.json
-              node -e "const f=require('fs'),p=JSON.parse(f.readFileSync('package.json'));f.writeFileSync('package.json',JSON.stringify(p,null,2));"
-            else
-              node -e "const f=require('fs'),p=JSON.parse(f.readFileSync('package.json'));p.devDependencies=p.devDependencies||{};p.devDependencies.typescript='^5.0.0';f.writeFileSync('package.json',JSON.stringify(p,null,2));"
+            if ! node -e "JSON.parse(require('fs').readFileSync('package.json'))" 2>/dev/null; then
+              echo "Corrupted JSON detected, restoring..."
+              git checkout HEAD -- package.json
             fi
+            
+            node -e "
+              const fs = require('fs');
+              const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              p.devDependencies = p.devDependencies || {};
+              p.devDependencies.typescript = '^5.0.0';
+              fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+            "
           fi
           
           mkdir -p .github/workflows
@@ -97,5 +100,6 @@ jobs:
           
           git config user.name "EryAI Schema Bot"
           git config user.email "bot@eryai.tech"
+          git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/eryai-tech/${{ matrix.repo }}.git
           git add .
           git diff --quiet && git diff --staged --quiet || (git commit -m "chore: sync from eryai-core-schema" && git push)
