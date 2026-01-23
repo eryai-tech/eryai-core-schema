@@ -1,0 +1,75 @@
+name: Broadcast Schema to Spokes
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  generate:
+    name: Generate Types
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Generate TypeScript Types
+        run: npx supabase gen types typescript --project-id ${{ secrets.SUPABASE_PROJECT_ID }} > types/database.types.ts
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      
+      - name: Format Types
+        run: node scripts/format-types.js
+      
+      - name: Commit to Hub
+        run: |
+          git config user.name "EryAI Schema Bot"
+          git config user.email "bot@eryai.tech"
+          git add types/
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: update database types from supabase" && git push)
+      
+      - name: Upload types artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-types
+          path: types/
+
+  broadcast:
+    name: Push to ${{ matrix.repo }}
+    needs: generate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repo: 
+          - 'eryai-engine'
+          - 'eryai-dashboard'
+          - 'eryai-sales'
+          - 'eryai-monitoring'
+          - 'ery-ai-demo-restaurang'
+      fail-fast: false
+    
+    steps:
+      - name: Download types artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: generated-types
+          path: types/
+      
+      - name: Push to ${{ matrix.repo }}
+        run: |
+          git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/shabajeric91-sketch/${{ matrix.repo }}.git spoke-repo
+          mkdir -p spoke-repo/types
+          cp types/database.types.ts spoke-repo/types/database.types.ts
+          cd spoke-repo
+          git config user.name "EryAI Schema Bot"
+          git config user.email "bot@eryai.tech"
+          git add types/
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: sync schema from eryai-core-schema" && git push)
