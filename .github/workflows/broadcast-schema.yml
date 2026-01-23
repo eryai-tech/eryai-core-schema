@@ -91,15 +91,28 @@ jobs:
             
             if [ "$DUPLICATE_COUNT" -gt "1" ]; then
               echo "⚠️ package.json has duplicate devDependencies ($DUPLICATE_COUNT found), restoring..."
-              # Find first commit that doesn't have duplicates
-              for commit in $(git log --oneline -20 --format="%H" -- package.json); do
+              FOUND_CLEAN="false"
+              # Find first commit that doesn't have duplicates (search up to 50 commits)
+              for commit in $(git log --oneline -50 --format="%H" -- package.json); do
                 COMMIT_DUPES=$(git show "$commit:package.json" 2>/dev/null | grep -c '"devDependencies"' || echo "0")
                 if [ "$COMMIT_DUPES" -eq "1" ]; then
                   echo "✅ Found clean package.json at $commit"
                   git show "$commit:package.json" > package.json
+                  FOUND_CLEAN="true"
                   break
                 fi
               done
+              
+              # If no clean version found, create a minimal one
+              if [ "$FOUND_CLEAN" = "false" ]; then
+                echo "⚠️ No clean version found, creating minimal package.json..."
+                echo '{
+  "name": "${{ matrix.repo }}",
+  "version": "1.0.0",
+  "dependencies": {},
+  "devDependencies": {}
+}' > package.json
+              fi
             fi
             
             # Now safely update package.json with Node.js
