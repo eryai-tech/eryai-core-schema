@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       repos: ${{ steps.get-repos.outputs.repos }}
-    
     steps:
       - uses: actions/checkout@v4
       
@@ -63,7 +62,6 @@ jobs:
       matrix:
         repo: ${{ fromJson(needs.generate.outputs.repos) }}
       fail-fast: false
-    
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -73,49 +71,43 @@ jobs:
       
       - name: Push to ${{ matrix.repo }}
         run: |
-          echo "🚀 Pushing to ${{ matrix.repo }}..."
+          echo "Pushing to ${{ matrix.repo }}..."
           git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/shabajeric91-sketch/${{ matrix.repo }}.git spoke-repo
           cd spoke-repo
           
-          # 1. Synka types
           mkdir -p types
           cp ../artifacts/types/database.types.ts types/database.types.ts
-          
-          # 2. Synka jsconfig.json
           cp ../artifacts/templates/jsconfig.json jsconfig.json
           
-          # 3. Fix package.json - detect duplicates and restore
           if [ -f "package.json" ]; then
-            # Check if package.json has duplicate keys (corrupted)
             DUPLICATE_COUNT=$(grep -c '"devDependencies"' package.json || echo "0")
             
             if [ "$DUPLICATE_COUNT" -gt "1" ]; then
-              echo "⚠️ package.json has duplicate devDependencies ($DUPLICATE_COUNT found), restoring..."
+              echo "package.json has duplicate devDependencies, restoring..."
               FOUND_CLEAN="false"
-              # Find first commit that doesn't have duplicates (search up to 50 commits)
               for commit in $(git log --oneline -50 --format="%H" -- package.json); do
                 COMMIT_DUPES=$(git show "$commit:package.json" 2>/dev/null | grep -c '"devDependencies"' || echo "0")
                 if [ "$COMMIT_DUPES" -eq "1" ]; then
-                  echo "✅ Found clean package.json at $commit"
+                  echo "Found clean package.json at $commit"
                   git show "$commit:package.json" > package.json
                   FOUND_CLEAN="true"
                   break
                 fi
               done
               
-              # If no clean version found, create a minimal one
               if [ "$FOUND_CLEAN" = "false" ]; then
-                echo "⚠️ No clean version found, creating minimal package.json..."
-                echo '{
+                echo "No clean version found, creating minimal package.json..."
+                cat > package.json << PKGEOF
+{
   "name": "${{ matrix.repo }}",
   "version": "1.0.0",
   "dependencies": {},
   "devDependencies": {}
-}' > package.json
+}
+PKGEOF
               fi
             fi
             
-            # Now safely update package.json with Node.js
             node -e "
               const fs = require('fs');
               try {
@@ -123,71 +115,64 @@ jobs:
                 pkg.devDependencies = pkg.devDependencies || {};
                 pkg.devDependencies['typescript'] = '^5.0.0';
                 fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-                console.log('✅ package.json updated successfully');
+                console.log('package.json updated successfully');
               } catch (e) {
-                console.error('❌ Failed to update package.json:', e.message);
+                console.error('Failed to update package.json:', e.message);
               }
             "
           fi
           
-          # 4. Skapa CI workflow
           mkdir -p .github/workflows
-          cat > .github/workflows/ci.yml << 'EOF'
-          name: CI Validation
+          cat > .github/workflows/ci.yml << 'CIEOF'
+name: CI Validation
 
-          on:
-            push:
-              branches: [main]
-            pull_request:
-              branches: [main]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
-          jobs:
-            validate:
-              name: Type Check & Build
-              runs-on: ubuntu-latest
-              
-              steps:
-                - uses: actions/checkout@v4
-                
-                - name: Setup Node.js
-                  uses: actions/setup-node@v4
-                  with:
-                    node-version: '20'
-                
-                - name: Install dependencies
-                  run: npm install
-                
-                - name: Run Type Check
-                  run: |
-                    if [ -f "jsconfig.json" ]; then
-                      echo "Running type check..."
-                      npx tsc --project jsconfig.json --skipLibCheck 2>&1 | head -50 > type-errors.log
-                      if [ -s type-errors.log ] && grep -q "error TS" type-errors.log; then
-                        echo "### ❌ Type Check Failed" >> $GITHUB_STEP_SUMMARY
-                        echo "" >> $GITHUB_STEP_SUMMARY
-                        echo "Copy this error to Claude:" >> $GITHUB_STEP_SUMMARY
-                        echo '```' >> $GITHUB_STEP_SUMMARY
-                        cat type-errors.log >> $GITHUB_STEP_SUMMARY
-                        echo '```' >> $GITHUB_STEP_SUMMARY
-                        exit 1
-                      fi
-                      echo "### ✅ Type Check Passed" >> $GITHUB_STEP_SUMMARY
-                    else
-                      echo "### ⏭️ Type Check Skipped (no jsconfig.json)" >> $GITHUB_STEP_SUMMARY
-                    fi
-                
-                - name: Build
-                  run: |
-                    if grep -q '"build"' package.json 2>/dev/null; then
-                      npm run build
-                    else
-                      echo "No build script found, skipping..."
-                    fi
-          EOF
+jobs:
+  validate:
+    name: Type Check & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Run Type Check
+        run: |
+          if [ -f "jsconfig.json" ]; then
+            echo "Running type check..."
+            npx tsc --project jsconfig.json --skipLibCheck 2>&1 | head -50 > type-errors.log
+            if [ -s type-errors.log ] && grep -q "error TS" type-errors.log; then
+              echo "### Type Check Failed" >> $GITHUB_STEP_SUMMARY
+              cat type-errors.log >> $GITHUB_STEP_SUMMARY
+              exit 1
+            fi
+            echo "### Type Check Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Type Check Skipped" >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Build
+        run: |
+          if grep -q '"build"' package.json 2>/dev/null; then
+            npm run build
+          else
+            echo "No build script found, skipping..."
+          fi
+CIEOF
           
-          # Commit & Push
           git config user.name "EryAI Schema Bot"
           git config user.email "bot@eryai.tech"
           git add .
           git diff --quiet && git diff --staged --quiet || (git commit -m "chore: sync schema, jsconfig and CI from eryai-core-schema" && git push)
-          echo "✅ Done with ${{ matrix.repo }}"
+          echo "Done with ${{ matrix.repo }}"
