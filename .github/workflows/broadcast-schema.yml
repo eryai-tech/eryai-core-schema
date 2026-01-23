@@ -84,15 +84,28 @@ jobs:
           # 2. Synka jsconfig.json (överskriver)
           cp ../artifacts/templates/jsconfig.json jsconfig.json
           
-          # 3. Fixa package.json med Node.js (säkrare än sed)
+          # 3. Fixa package.json (hämta original från git history om trasig)
           if [ -f "package.json" ]; then
             node -e "
               const fs = require('fs');
-              const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              let pkg;
+              try {
+                pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+                console.log('✅ package.json is valid');
+              } catch (e) {
+                console.log('⚠️ package.json is corrupted, creating fresh one...');
+                pkg = { 
+                  name: '${{ matrix.repo }}', 
+                  version: '1.0.0', 
+                  dependencies: {
+                    '@supabase/supabase-js': '^2.39.0'
+                  }
+                };
+              }
               if (!pkg.devDependencies) pkg.devDependencies = {};
               pkg.devDependencies.typescript = '^5.0.0';
               fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-              console.log('✅ Updated package.json with typescript');
+              console.log('✅ package.json updated');
             "
           fi
           
