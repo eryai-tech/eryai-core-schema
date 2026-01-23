@@ -81,22 +81,9 @@ jobs:
             DUPES=$(grep -c '"devDependencies"' package.json || echo "0")
             if [ "$DUPES" -gt "1" ]; then
               echo "Fixing corrupted package.json..."
-              # Extract name from corrupted file
-              NAME=$(grep -o '"name":\s*"[^"]*"' package.json | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
-              [ -z "$NAME" ] && NAME="${{ matrix.repo }}"
-              # Create fresh package.json
-              cat > package.json << PKGEOF
-{
-  "name": "$NAME",
-  "version": "1.0.0",
-  "dependencies": {
-    "@supabase/supabase-js": "^2.39.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.0.0"
-  }
-}
-PKGEOF
+              REPO_NAME="${{ matrix.repo }}"
+              echo "{\"name\":\"$REPO_NAME\",\"version\":\"1.0.0\",\"dependencies\":{\"@supabase/supabase-js\":\"^2.39.0\"},\"devDependencies\":{\"typescript\":\"^5.0.0\"}}" > package.json
+              node -e "const f=require('fs'),p=JSON.parse(f.readFileSync('package.json'));f.writeFileSync('package.json',JSON.stringify(p,null,2));"
             else
               node -e "const f=require('fs'),p=JSON.parse(f.readFileSync('package.json'));p.devDependencies=p.devDependencies||{};p.devDependencies.typescript='^5.0.0';f.writeFileSync('package.json',JSON.stringify(p,null,2));"
             fi
