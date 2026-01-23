@@ -97,77 +97,46 @@ jobs:
               
               if [ "$FOUND_CLEAN" = "false" ]; then
                 echo "No clean version found, creating minimal package.json..."
-                cat > package.json << PKGEOF
-{
-  "name": "${{ matrix.repo }}",
-  "version": "1.0.0",
-  "dependencies": {},
-  "devDependencies": {}
-}
-PKGEOF
+                echo '{"name":"${{ matrix.repo }}","version":"1.0.0","dependencies":{},"devDependencies":{}}' > package.json
               fi
             fi
             
-            node -e "
-              const fs = require('fs');
-              try {
-                const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-                pkg.devDependencies = pkg.devDependencies || {};
-                pkg.devDependencies['typescript'] = '^5.0.0';
-                fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-                console.log('package.json updated successfully');
-              } catch (e) {
-                console.error('Failed to update package.json:', e.message);
-              }
-            "
+            node -e "const fs=require('fs');try{const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.devDependencies=p.devDependencies||{};p.devDependencies.typescript='^5.0.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');console.log('package.json updated');}catch(e){console.error(e.message);}"
           fi
           
           mkdir -p .github/workflows
           cat > .github/workflows/ci.yml << 'CIEOF'
 name: CI Validation
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
 jobs:
   validate:
-    name: Type Check & Build
+    name: Type Check and Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      
       - name: Install dependencies
         run: npm install
-      
       - name: Run Type Check
         run: |
           if [ -f "jsconfig.json" ]; then
-            echo "Running type check..."
             npx tsc --project jsconfig.json --skipLibCheck 2>&1 | head -50 > type-errors.log
             if [ -s type-errors.log ] && grep -q "error TS" type-errors.log; then
-              echo "### Type Check Failed" >> $GITHUB_STEP_SUMMARY
-              cat type-errors.log >> $GITHUB_STEP_SUMMARY
+              cat type-errors.log
               exit 1
             fi
-            echo "### Type Check Passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### Type Check Skipped" >> $GITHUB_STEP_SUMMARY
           fi
-      
       - name: Build
         run: |
           if grep -q '"build"' package.json 2>/dev/null; then
             npm run build
-          else
-            echo "No build script found, skipping..."
           fi
 CIEOF
           
