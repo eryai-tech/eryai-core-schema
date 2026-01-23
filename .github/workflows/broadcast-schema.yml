@@ -9,6 +9,8 @@ jobs:
   generate:
     name: Generate Types
     runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.get-repos.outputs.repos }}
     
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +38,15 @@ jobs:
           git add types/
           git diff --quiet && git diff --staged --quiet || (git commit -m "chore: update database types from supabase" && git push)
       
+      - name: Get EryAI repos
+        id: get-repos
+        run: |
+          REPOS=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            "https://api.github.com/users/shabajeric91-sketch/repos?per_page=100" | \
+            jq -r '[.[] | select(.name | test("^eryai|^ery-ai")) | select(.name != "eryai-core-schema") | .name] | @json')
+          echo "repos=$REPOS" >> $GITHUB_OUTPUT
+          echo "Found repos: $REPOS"
+      
       - name: Upload types artifact
         uses: actions/upload-artifact@v4
         with:
@@ -48,12 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        repo: 
-          - 'eryai-engine'
-          - 'eryai-dashboard'
-          - 'eryai-sales'
-          - 'eryai-monitoring'
-          - 'ery-ai-demo-restaurang'
+        repo: ${{ fromJson(needs.generate.outputs.repos) }}
       fail-fast: false
     
     steps:
@@ -65,6 +71,7 @@ jobs:
       
       - name: Push to ${{ matrix.repo }}
         run: |
+          echo "🚀 Pushing types to ${{ matrix.repo }}..."
           git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/shabajeric91-sketch/${{ matrix.repo }}.git spoke-repo
           mkdir -p spoke-repo/types
           cp types/database.types.ts spoke-repo/types/database.types.ts
@@ -73,3 +80,4 @@ jobs:
           git config user.email "bot@eryai.tech"
           git add types/
           git diff --quiet && git diff --staged --quiet || (git commit -m "chore: sync schema from eryai-core-schema" && git push)
+          echo "✅ Done with ${{ matrix.repo }}"
