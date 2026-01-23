@@ -1,0 +1,38 @@
+name: CI Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Type Check and Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Run Type Check
+        run: |
+          if [ -f "jsconfig.json" ]; then
+            npx tsc --project jsconfig.json --skipLibCheck 2>&1 | head -50 > type-errors.log
+            if [ -s type-errors.log ] && grep -q "error TS" type-errors.log; then
+              cat type-errors.log
+              exit 1
+            fi
+          fi
+      
+      - name: Build
+        run: |
+          if grep -q '"build"' package.json 2>/dev/null; then
+            npm run build
+          fi
