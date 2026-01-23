@@ -1,0 +1,13 @@
+{
+  "name": "eryai-core-schema",
+  "version": "1.0.0",
+  "description": "Single Source of Truth for EryAI database types",
+  "private": true,
+  "scripts": {
+    "generate": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > types/database.types.ts",
+    "format": "node scripts/format-types.js"
+  },
+  "devDependencies": {
+    "supabase": "^1.200.0"
+  }
+}
