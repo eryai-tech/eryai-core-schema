@@ -13,8 +13,6 @@ jobs:
       repos: ${{ steps.get-repos.outputs.repos }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_TOKEN }}
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
