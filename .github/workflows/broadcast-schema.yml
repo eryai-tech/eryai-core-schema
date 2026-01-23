@@ -84,15 +84,18 @@ jobs:
           # 2. Synka jsconfig.json
           cp ../artifacts/templates/jsconfig.json jsconfig.json
           
-          # 3. Fix package.json - restore if corrupted, then update safely
+          # 3. Fix package.json - detect duplicates and restore
           if [ -f "package.json" ]; then
-            # Check if package.json is valid JSON
-            if ! node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))" 2>/dev/null; then
-              echo "⚠️ package.json is corrupted, finding last valid version..."
-              # Find last commit where package.json was valid
+            # Check if package.json has duplicate keys (corrupted)
+            DUPLICATE_COUNT=$(grep -c '"devDependencies"' package.json || echo "0")
+            
+            if [ "$DUPLICATE_COUNT" -gt "1" ]; then
+              echo "⚠️ package.json has duplicate devDependencies ($DUPLICATE_COUNT found), restoring..."
+              # Find first commit that doesn't have duplicates
               for commit in $(git log --oneline -20 --format="%H" -- package.json); do
-                if git show "$commit:package.json" | node -e "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8'))" 2>/dev/null; then
-                  echo "✅ Found valid package.json at $commit"
+                COMMIT_DUPES=$(git show "$commit:package.json" 2>/dev/null | grep -c '"devDependencies"' || echo "0")
+                if [ "$COMMIT_DUPES" -eq "1" ]; then
+                  echo "✅ Found clean package.json at $commit"
                   git show "$commit:package.json" > package.json
                   break
                 fi
