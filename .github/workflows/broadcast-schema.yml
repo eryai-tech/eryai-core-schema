@@ -41,7 +41,7 @@ jobs:
         id: get-repos
         run: |
           REPOS=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
-            "https://api.github.com/users/shabajeric91-sketch/repos?per_page=100" | \
+            "https://api.github.com/orgs/eryai-tech/repos?per_page=100" | \
             jq -r '[.[] | select(.name | test("^eryai|^ery-ai")) | select(.name != "eryai-core-schema") | .name] | @json')
           echo "repos=$REPOS" >> $GITHUB_OUTPUT
       
@@ -70,7 +70,7 @@ jobs:
       
       - name: Push to ${{ matrix.repo }}
         run: |
-          git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/shabajeric91-sketch/${{ matrix.repo }}.git spoke-repo
+          git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/eryai-tech/${{ matrix.repo }}.git spoke-repo
           cd spoke-repo
           
           mkdir -p types
