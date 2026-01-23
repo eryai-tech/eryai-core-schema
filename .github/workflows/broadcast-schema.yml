@@ -30,13 +30,26 @@ jobs:
       - name: Format Types
         run: node scripts/format-types.js || echo "No format script found, skipping"
       
+      - name: Debug secrets
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "ERROR: GH_TOKEN is empty!"
+            exit 1
+          else
+            echo "GH_TOKEN is set (length: ${#GH_TOKEN})"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      
       - name: Commit to Hub
         run: |
           git config user.name "EryAI Schema Bot"
           git config user.email "bot@eryai.tech"
-          git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/eryai-tech/eryai-core-schema.git
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/eryai-core-schema.git
           git add types/
           git diff --quiet && git diff --staged --quiet || (git commit -m "chore: update database types from supabase" && git push)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
       
       - name: Get EryAI repos
         id: get-repos
@@ -71,7 +84,7 @@ jobs:
       
       - name: Push to ${{ matrix.repo }}
         run: |
-          git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/eryai-tech/${{ matrix.repo }}.git spoke-repo
+          git clone https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git spoke-repo
           cd spoke-repo
           
           mkdir -p types
@@ -98,6 +111,8 @@ jobs:
           
           git config user.name "EryAI Schema Bot"
           git config user.email "bot@eryai.tech"
-          git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/eryai-tech/${{ matrix.repo }}.git
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git
           git add .
           git diff --quiet && git diff --staged --quiet || (git commit -m "chore: sync from eryai-core-schema" && git push)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
