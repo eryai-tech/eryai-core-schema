@@ -73,6 +73,13 @@ jobs:
           name: broadcast-files
           path: artifacts/
       
+      - name: Debug Auth
+        env:
+          MY_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "Testing token against GitHub API..."
+          curl -I -H "Authorization: token $MY_TOKEN" https://api.github.com/repos/eryai-tech/eryai-core-schema
+      
       - name: Push to ${{ matrix.repo }}
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
