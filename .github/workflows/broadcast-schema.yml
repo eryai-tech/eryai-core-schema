@@ -39,9 +39,9 @@ jobs:
           git config user.name "EryAI Schema Bot"
           git config user.email "bot@eryai.tech"
           git config --unset-all http.https://github.com/.extraheader || true
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/eryai-core-schema.git"
+          git remote set-url origin "https://shabajeric91-sketch:${GH_TOKEN}@github.com/eryai-tech/eryai-core-schema.git"
           git add types/
-          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: update database types from supabase" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: update database types from supabase" && git push origin main)
       
       - name: Get EryAI repos
         id: get-repos
@@ -78,7 +78,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git" spoke-repo
+          git clone "https://shabajeric91-sketch:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git" spoke-repo
           cd spoke-repo
           
           mkdir -p types
