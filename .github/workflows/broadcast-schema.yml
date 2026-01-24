@@ -106,7 +106,13 @@ jobs:
           cp ../artifacts/templates/jsconfig.json jsconfig.json
           cp ../artifacts/templates/ci.yml .github/workflows/ci.yml
           
-          # 5. Git config & Push
+          # 5. Generate package-lock.json if missing
+          if [ -f "package.json" ] && [ ! -f "package-lock.json" ]; then
+            echo "Generating package-lock.json..."
+            npm install --package-lock-only
+          fi
+          
+          # 6. Git config & Push
           git config user.name "EryAI Schema Bot"
           git config user.email "bot@eryai.tech"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git"
