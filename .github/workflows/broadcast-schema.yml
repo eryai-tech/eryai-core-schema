@@ -77,46 +77,39 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          # Clone with token directly in URL (no x-access-token prefix)
-          git clone "https://${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git" spoke-repo
+          # 1. Clear any global credentials
+          git config --global --unset-all http.https://github.com/.extraheader || true
+          
+          # 2. Clone with clear auth structure
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git" spoke-repo
           cd spoke-repo
           
-          # Copy files
-          mkdir -p types
-          cp ../artifacts/types/database.types.ts types/database.types.ts
-          cp ../artifacts/templates/jsconfig.json jsconfig.json
-          
-          # Fix package.json using Node (not sed)
+          # 3. Fix package.json (restore first if corrupt, then inject)
           if [ -f "package.json" ]; then
+            if ! node -e "JSON.parse(require('fs').readFileSync('package.json'))" 2>/dev/null; then
+              echo "Corrupted JSON detected, restoring..."
+              git checkout HEAD -- package.json
+            fi
+            
             node -e "
               const fs = require('fs');
-              let pkg;
-              try {
-                pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-              } catch (e) {
-                console.log('Corrupted JSON, using git restore');
-                process.exit(1);
-              }
-              pkg.devDependencies = pkg.devDependencies || {};
-              pkg.devDependencies.typescript = '^5.0.0';
-              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-            " || git checkout HEAD -- package.json
+              const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              p.devDependencies = p.devDependencies || {};
+              p.devDependencies.typescript = '^5.0.0';
+              fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+            "
           fi
-          
-          # Copy CI workflow
-          mkdir -p .github/workflows
+
+          # 4. Sync files
+          mkdir -p types .github/workflows
+          cp ../artifacts/types/database.types.ts types/database.types.ts
+          cp ../artifacts/templates/jsconfig.json jsconfig.json
           cp ../artifacts/templates/ci.yml .github/workflows/ci.yml
           
-          # Git config
+          # 5. Git config & Push
           git config user.name "EryAI Schema Bot"
           git config user.email "bot@eryai.tech"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git"
           
-          # CRITICAL: Kill any cached credentials from checkout
-          git config --local --unset-all http.https://github.com/.extraheader || true
-          
-          # Set remote with token (no x-access-token prefix)
-          git remote set-url origin "https://${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git"
-          
-          # Commit and push
           git add .
           git diff --quiet && git diff --staged --quiet || (git commit -m "chore: sync from eryai-core-schema" && git push origin main)
