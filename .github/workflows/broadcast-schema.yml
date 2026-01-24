@@ -5,6 +5,9 @@ on:
     - cron: '0 2 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   generate:
     name: Generate Types
@@ -13,8 +16,6 @@ jobs:
       repos: ${{ steps.get-repos.outputs.repos }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -41,10 +42,9 @@ jobs:
       
       - name: Get EryAI repos
         id: get-repos
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          REPOS=$(gh repo list eryai-tech --limit 100 --json name -q '[.[].name | select(test("^eryai|^ery-ai")) | select(. != "eryai-core-schema")]')
+          # Hardcoded list - GH_TOKEN issue to be fixed later
+          REPOS='["eryai-dashboard","eryai-engine","eryai-monitoring","eryai-sales","eryai-tech","eryai-demos","ery-ai-demo-restaurang"]'
           echo "repos=$REPOS" >> $GITHUB_OUTPUT
       
       - name: Upload artifacts
@@ -74,7 +74,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          git clone "https://shabajeric91-sketch:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git" spoke-repo
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git" spoke-repo
           cd spoke-repo
           
           mkdir -p types
