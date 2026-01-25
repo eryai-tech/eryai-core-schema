@@ -1,0 +1,80 @@
+name: Emergency Schema Broadcast
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Anledning till emergency broadcast'
+        required: true
+        type: string
+
+jobs:
+  emergency-broadcast:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Supabase CLI
+        run: npm install -g supabase
+
+      - name: Generate Types from Supabase
+        run: |
+          supabase gen types typescript \
+            --project-id ${{ secrets.SUPABASE_PROJECT_ID }} \
+            --schema public \
+            > types/database.types.ts
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Commit updated types
+        run: |
+          git config user.name "EryAI Schema Bot"
+          git config user.email "bot@eryai.tech"
+          git add types/database.types.ts
+          git diff --quiet && git diff --staged --quiet || git commit -m "emergency: ${{ github.event.inputs.reason }}"
+          git push
+
+      - name: Discover all repos in org
+        id: discover
+        run: |
+          REPOS=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            "https://api.github.com/orgs/eryai-tech/repos?per_page=100" | \
+            jq -r '[.[] | select(.name | test("^eryai-|^ery-ai-|^mimre$")) | select(.name != "eryai-core-schema") | .name] | join(",")')
+          echo "repos=$REPOS" >> $GITHUB_OUTPUT
+          echo "🔍 Found repos: $REPOS"
+
+      - name: Broadcast to all repos
+        run: |
+          IFS=',' read -ra REPOS <<< "${{ steps.discover.outputs.repos }}"
+          for repo in "${REPOS[@]}"; do
+            echo "🚀 Emergency broadcast to $repo..."
+            
+            git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/eryai-tech/$repo.git spoke-repo
+            
+            mkdir -p spoke-repo/types
+            cp types/database.types.ts spoke-repo/types/database.types.ts
+            
+            cd spoke-repo
+            git config user.name "EryAI Schema Bot"
+            git config user.email "bot@eryai.tech"
+            git add types/
+            git diff --quiet && git diff --staged --quiet || (git commit -m "emergency: ${{ github.event.inputs.reason }}" && git push)
+            cd ..
+            rm -rf spoke-repo
+            
+            echo "✅ Done with $repo"
+          done
+
+      - name: Summary
+        run: |
+          echo "## 🚨 Emergency Broadcast Complete" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Repos updated:** ${{ steps.discover.outputs.repos }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
