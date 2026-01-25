@@ -1,9 +1,9 @@
 name: Validate All Repos
 
 on:
-  # Triggas av spoke-repos vid push
+  # Triggas av spoke-repos EFTER lyckad lokal validering
   repository_dispatch:
-    types: [repo_push]
+    types: [upstream_push]
   
   # Nattlig körning
   schedule:
@@ -13,88 +13,45 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Om triggered av repo_push, validera bara det repot
-  validate-single:
-    if: github.event_name == 'repository_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Extract repo name
-        id: repo
-        run: |
-          FULL_REPO="${{ github.event.client_payload.repo }}"
-          REPO_NAME="${FULL_REPO#eryai-tech/}"
-          echo "name=$REPO_NAME" >> $GITHUB_OUTPUT
-          echo "🎯 Validating: $REPO_NAME (triggered by push)"
-
-      - name: Checkout ${{ steps.repo.outputs.name }}
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.event.client_payload.repo }}
-          token: ${{ secrets.GH_TOKEN }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci || npm install
-        continue-on-error: true
-
-      - name: TypeScript Check
-        run: |
-          if grep -q '"typecheck"' package.json 2>/dev/null; then
-            npm run typecheck
-          elif [ -f "tsconfig.json" ]; then
-            npx tsc --noEmit
-          elif [ -f "jsconfig.json" ]; then
-            echo "JavaScript project with JSConfig"
-          else
-            echo "No TypeScript config found, skipping"
-          fi
-
-      - name: Build Check
-        run: |
-          if grep -q '"build"' package.json 2>/dev/null; then
-            npm run build
-          else
-            echo "No build script found, skipping"
-          fi
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-
-      - name: Summary
-        run: |
-          echo "## ✅ Validation Complete" >> $GITHUB_STEP_SUMMARY
-          echo "**Repo:** ${{ github.event.client_payload.repo }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.event.client_payload.sha }}" >> $GITHUB_STEP_SUMMARY
-
-  # För scheduled/manual - validera alla repos
-  discover:
-    if: github.event_name != 'repository_dispatch'
+  # STEG 1: Upptäck alla repos i organisationen
+  discovery:
+    name: Discover Repos
     runs-on: ubuntu-latest
     outputs:
       repos: ${{ steps.find-repos.outputs.repos }}
+      origin: ${{ steps.set-origin.outputs.origin }}
     steps:
+      - name: Set Origin Repo
+        id: set-origin
+        run: |
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "origin=${{ github.event.client_payload.origin_repo }}" >> $GITHUB_OUTPUT
+            echo "🎯 Triggered by: ${{ github.event.client_payload.origin_repo }}"
+          else
+            echo "origin=manual/scheduled" >> $GITHUB_OUTPUT
+            echo "🕐 Triggered by: ${{ github.event_name }}"
+          fi
+
       - name: Find all repos in org
         id: find-repos
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          REPOS=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+          REPOS=$(curl -s -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/orgs/eryai-tech/repos?per_page=100" | \
             jq -c '[.[] | select(.name | test("^eryai-|^ery-ai-|^mimre$")) | select(.name != "eryai-core-schema") | .name]')
           echo "repos=$REPOS" >> $GITHUB_OUTPUT
           echo "🔍 Found repos: $REPOS"
 
-  validate-all:
-    if: github.event_name != 'repository_dispatch'
-    needs: discover
+  # STEG 2: Validera ALLA repos parallellt
+  validate:
+    name: Validate ${{ matrix.repo }}
+    needs: discovery
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        repo: ${{ fromJson(needs.discover.outputs.repos) }}
-    
+        repo: ${{ fromJson(needs.discovery.outputs.repos) }}
     steps:
       - name: Checkout ${{ matrix.repo }}
         uses: actions/checkout@v4
@@ -112,36 +69,47 @@ jobs:
         continue-on-error: true
 
       - name: TypeScript Check
+        id: typecheck
         run: |
           if grep -q '"typecheck"' package.json 2>/dev/null; then
             npm run typecheck
           elif [ -f "tsconfig.json" ]; then
             npx tsc --noEmit
           elif [ -f "jsconfig.json" ]; then
-            echo "JavaScript project with JSConfig"
+            npx tsc --project jsconfig.json --skipLibCheck --maxNodeModuleJsDepth 0 || echo "JSDoc check complete"
           else
             echo "No TypeScript config found, skipping"
           fi
-        continue-on-error: true
 
       - name: Build Check
+        id: build
         run: |
           if grep -q '"build"' package.json 2>/dev/null; then
             npm run build
           else
             echo "No build script found, skipping"
           fi
-        continue-on-error: true
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
-  summary:
-    if: github.event_name != 'repository_dispatch'
-    needs: [discover, validate-all]
+  # STEG 3: Sammanfattning
+  report:
+    name: Generate Report
+    needs: [discovery, validate]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Create Summary
         run: |
-          echo "## 🔍 Validation Complete" >> $GITHUB_STEP_SUMMARY
-          echo "**Repos validated:** ${{ needs.discover.outputs.repos }}" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Global Valideringsrapport" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggad av:** ${{ needs.discovery.outputs.origin }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repos validerade:** ${{ needs.discovery.outputs.repos }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.validate.result }}" == "success" ]; then
+            echo "### ✅ Alla repos passerade!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ⚠️ Vissa repos hade problem - kolla individuella jobb ovan" >> $GITHUB_STEP_SUMMARY
+          fi
