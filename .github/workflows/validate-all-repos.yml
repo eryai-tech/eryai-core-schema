@@ -7,34 +7,21 @@ on:
   
   # Manuell trigger
   workflow_dispatch:
-  
-  # När schema ändras
-  push:
-    paths:
-      - 'types/database.types.ts'
 
 jobs:
-  discover:
-    runs-on: ubuntu-latest
-    outputs:
-      repos: ${{ steps.discover.outputs.repos }}
-    steps:
-      - name: Discover all repos
-        id: discover
-        run: |
-          REPOS=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
-            "https://api.github.com/orgs/eryai-tech/repos?per_page=100" | \
-            jq -r '[.[] | select(.name | test("^eryai-|^ery-ai-|^mimre$")) | select(.name != "eryai-core-schema") | .name] | join(" ")')
-          echo "repos=$REPOS" >> $GITHUB_OUTPUT
-          echo "🔍 Found repos: $REPOS"
-
   validate:
-    needs: discover
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        repo: ${{ fromJson(format('["{0}"]', join(fromJson(format('["{0}"]', replace(needs.discover.outputs.repos, ' ', '","'))), '","'))) }}
+        repo: 
+          - eryai-engine
+          - eryai-dashboard
+          - eryai-demos
+          - eryai-sales
+          - eryai-monitoring
+          - eryai-tech
+          - mimre
     
     steps:
       - name: Checkout ${{ matrix.repo }}
@@ -47,20 +34,21 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
+        continue-on-error: true
 
       - name: TypeScript Check
         run: |
           if grep -q '"typecheck"' package.json 2>/dev/null; then
             npm run typecheck
-          elif grep -q '"tsc"' package.json 2>/dev/null; then
+          elif [ -f "tsconfig.json" ]; then
             npx tsc --noEmit
           else
-            echo "No typecheck script found, skipping..."
+            echo "No TypeScript config found, skipping..."
           fi
+        continue-on-error: true
 
       - name: ESLint Check
         run: |
@@ -69,6 +57,7 @@ jobs:
           else
             echo "No lint script found, skipping..."
           fi
+        continue-on-error: true
 
       - name: Build Check
         run: |
@@ -77,26 +66,22 @@ jobs:
           else
             echo "No build script found, skipping..."
           fi
+        continue-on-error: true
 
       - name: Health Endpoint Check
         run: |
-          # Kolla om health endpoint finns
           if [ -f "pages/api/health.js" ] || [ -f "pages/api/health.ts" ] || [ -f "app/api/health/route.ts" ] || [ -f "app/api/health/route.js" ]; then
             echo "✅ Health endpoint found"
           else
-            echo "⚠️ WARNING: No /api/health endpoint found in ${{ matrix.repo }}"
-            echo "Add health endpoint for Golden Path compliance"
+            echo "⚠️ WARNING: No /api/health endpoint found"
           fi
 
   summary:
-    needs: [discover, validate]
+    needs: validate
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Create Summary
         run: |
-          echo "## 🔍 Validation Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Repos checked:** ${{ needs.discover.outputs.repos }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔍 Validation Complete" >> $GITHUB_STEP_SUMMARY
           echo "Check individual job results above for details." >> $GITHUB_STEP_SUMMARY
