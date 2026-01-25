@@ -1,0 +1,101 @@
+name: Generate Code Maps
+
+on:
+  # Kör efter validation
+  workflow_run:
+    workflows: ["Validate All Repos"]
+    types:
+      - completed
+  
+  # Manuell trigger
+  workflow_dispatch:
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.discover.outputs.repos }}
+    steps:
+      - name: Discover all repos
+        id: discover
+        run: |
+          REPOS=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            "https://api.github.com/orgs/eryai-tech/repos?per_page=100" | \
+            jq -r '[.[] | select(.name | test("^eryai-|^ery-ai-|^mimre$")) | select(.name != "eryai-core-schema") | .name] | join(" ")')
+          echo "repos=$REPOS" >> $GITHUB_OUTPUT
+
+  generate-maps:
+    needs: discover
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout core-schema
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate Code Maps
+        run: |
+          mkdir -p code-maps
+          
+          IFS=' ' read -ra REPOS <<< "${{ needs.discover.outputs.repos }}"
+          for repo in "${REPOS[@]}"; do
+            echo "📝 Generating code map for $repo..."
+            
+            # Clone repo
+            git clone --depth 1 https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/eryai-tech/$repo.git temp-repo
+            
+            # Generate CODE_MAP.md
+            cat > code-maps/${repo}.md << 'MAPEOF'
+          # Code Map: $repo
+          Generated: $(date -u +"%Y-%m-%d %H:%M UTC")
+          
+          ## 📁 Structure
+          MAPEOF
+            
+            # List all relevant files
+            echo '```' >> code-maps/${repo}.md
+            find temp-repo -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" \) \
+              ! -path "*/node_modules/*" ! -path "*/.next/*" ! -name "*.d.ts" \
+              | sed 's|temp-repo/||' | sort >> code-maps/${repo}.md
+            echo '```' >> code-maps/${repo}.md
+            
+            # API Endpoints
+            echo "" >> code-maps/${repo}.md
+            echo "## 🔌 API Endpoints" >> code-maps/${repo}.md
+            echo '```' >> code-maps/${repo}.md
+            find temp-repo -path "*/api/*" -type f \( -name "*.ts" -o -name "*.js" \) \
+              ! -path "*/node_modules/*" ! -name "_*" \
+              | sed 's|temp-repo/||' | sed 's|pages/api/|/api/|' | sed 's|app/api/|/api/|' \
+              | sed 's|/route.ts||' | sed 's|/route.js||' | sed 's|.ts||' | sed 's|.js||' \
+              | sort >> code-maps/${repo}.md
+            echo '```' >> code-maps/${repo}.md
+            
+            # Functions/Exports (simplified)
+            echo "" >> code-maps/${repo}.md
+            echo "## 📦 Key Exports" >> code-maps/${repo}.md
+            echo '```' >> code-maps/${repo}.md
+            grep -r "export " temp-repo --include="*.ts" --include="*.js" \
+              ! -path "*/node_modules/*" ! -path "*/.next/*" \
+              | grep -E "export (async )?function|export const|export default" \
+              | sed 's|temp-repo/||' | head -50 >> code-maps/${repo}.md || echo "No exports found"
+            echo '```' >> code-maps/${repo}.md
+            
+            rm -rf temp-repo
+            echo "✅ Done with $repo"
+          done
+
+      - name: Commit Code Maps
+        run: |
+          git config user.name "EryAI Schema Bot"
+          git config user.email "bot@eryai.tech"
+          git add code-maps/
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: update code maps" && git push)
+
+      - name: Summary
+        run: |
+          echo "## 📝 Code Maps Generated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          ls -la code-maps/ >> $GITHUB_STEP_SUMMARY
