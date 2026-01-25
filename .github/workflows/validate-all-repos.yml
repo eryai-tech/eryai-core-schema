@@ -1,27 +1,32 @@
 name: Validate All Repos
 
 on:
-  # Kör varje natt efter schema broadcast
   schedule:
-    - cron: '0 3 * * *'  # 03:00 UTC (efter broadcast kl 02:00)
-  
-  # Manuell trigger
+    - cron: '0 3 * * *'
   workflow_dispatch:
 
 jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.find-repos.outputs.repos }}
+    steps:
+      - name: Find all repos in org
+        id: find-repos
+        run: |
+          REPOS=$(curl -s -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            "https://api.github.com/orgs/eryai-tech/repos?per_page=100" | \
+            jq -c '[.[] | select(.name | test("^eryai-|^ery-ai-|^mimre$")) | select(.name != "eryai-core-schema") | .name]')
+          echo "repos=$REPOS" >> $GITHUB_OUTPUT
+          echo "🔍 Found repos: $REPOS"
+
   validate:
+    needs: discover
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        repo: 
-          - eryai-engine
-          - eryai-dashboard
-          - eryai-demos
-          - eryai-sales
-          - eryai-monitoring
-          - eryai-tech
-          - mimre
+        repo: ${{ fromJson(needs.discover.outputs.repos) }}
     
     steps:
       - name: Checkout ${{ matrix.repo }}
@@ -67,6 +72,9 @@ jobs:
             echo "No build script found, skipping..."
           fi
         continue-on-error: true
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: Health Endpoint Check
         run: |
@@ -77,11 +85,11 @@ jobs:
           fi
 
   summary:
-    needs: validate
+    needs: [discover, validate]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Create Summary
         run: |
           echo "## 🔍 Validation Complete" >> $GITHUB_STEP_SUMMARY
-          echo "Check individual job results above for details." >> $GITHUB_STEP_SUMMARY
+          echo "**Repos validated:** ${{ needs.discover.outputs.repos }}" >> $GITHUB_STEP_SUMMARY
