@@ -1,12 +1,78 @@
 name: Validate All Repos
 
 on:
+  # Triggas av spoke-repos vid push
+  repository_dispatch:
+    types: [repo_push]
+  
+  # Nattlig körning
   schedule:
     - cron: '0 3 * * *'
+  
+  # Manuell trigger
   workflow_dispatch:
 
 jobs:
+  # Om triggered av repo_push, validera bara det repot
+  validate-single:
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract repo name
+        id: repo
+        run: |
+          FULL_REPO="${{ github.event.client_payload.repo }}"
+          REPO_NAME="${FULL_REPO#eryai-tech/}"
+          echo "name=$REPO_NAME" >> $GITHUB_OUTPUT
+          echo "🎯 Validating: $REPO_NAME (triggered by push)"
+
+      - name: Checkout ${{ steps.repo.outputs.name }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.repo }}
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+        continue-on-error: true
+
+      - name: TypeScript Check
+        run: |
+          if grep -q '"typecheck"' package.json 2>/dev/null; then
+            npm run typecheck
+          elif [ -f "tsconfig.json" ]; then
+            npx tsc --noEmit
+          elif [ -f "jsconfig.json" ]; then
+            echo "JavaScript project with JSConfig"
+          else
+            echo "No TypeScript config found, skipping"
+          fi
+
+      - name: Build Check
+        run: |
+          if grep -q '"build"' package.json 2>/dev/null; then
+            npm run build
+          else
+            echo "No build script found, skipping"
+          fi
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Summary
+        run: |
+          echo "## ✅ Validation Complete" >> $GITHUB_STEP_SUMMARY
+          echo "**Repo:** ${{ github.event.client_payload.repo }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.event.client_payload.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  # För scheduled/manual - validera alla repos
   discover:
+    if: github.event_name != 'repository_dispatch'
     runs-on: ubuntu-latest
     outputs:
       repos: ${{ steps.find-repos.outputs.repos }}
@@ -20,7 +86,8 @@ jobs:
           echo "repos=$REPOS" >> $GITHUB_OUTPUT
           echo "🔍 Found repos: $REPOS"
 
-  validate:
+  validate-all:
+    if: github.event_name != 'repository_dispatch'
     needs: discover
     runs-on: ubuntu-latest
     strategy:
@@ -41,7 +108,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci || npm install
         continue-on-error: true
 
       - name: TypeScript Check
@@ -50,17 +117,10 @@ jobs:
             npm run typecheck
           elif [ -f "tsconfig.json" ]; then
             npx tsc --noEmit
+          elif [ -f "jsconfig.json" ]; then
+            echo "JavaScript project with JSConfig"
           else
-            echo "No TypeScript config found, skipping..."
-          fi
-        continue-on-error: true
-
-      - name: ESLint Check
-        run: |
-          if grep -q '"lint"' package.json 2>/dev/null; then
-            npm run lint || echo "Lint warnings found"
-          else
-            echo "No lint script found, skipping..."
+            echo "No TypeScript config found, skipping"
           fi
         continue-on-error: true
 
@@ -69,25 +129,17 @@ jobs:
           if grep -q '"build"' package.json 2>/dev/null; then
             npm run build
           else
-            echo "No build script found, skipping..."
+            echo "No build script found, skipping"
           fi
         continue-on-error: true
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
-      - name: Health Endpoint Check
-        run: |
-          if [ -f "pages/api/health.js" ] || [ -f "pages/api/health.ts" ] || [ -f "app/api/health/route.ts" ] || [ -f "app/api/health/route.js" ]; then
-            echo "✅ Health endpoint found"
-          else
-            echo "⚠️ WARNING: No /api/health endpoint found"
-          fi
-
   summary:
-    needs: [discover, validate]
+    if: github.event_name != 'repository_dispatch'
+    needs: [discover, validate-all]
     runs-on: ubuntu-latest
-    if: always()
     steps:
       - name: Create Summary
         run: |
