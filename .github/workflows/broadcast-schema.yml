@@ -43,7 +43,7 @@ jobs:
       - name: Get EryAI repos
         id: get-repos
         run: |
-          REPOS='["eryai-dashboard","eryai-engine","eryai-monitoring","eryai-sales","eryai-tech","eryai-demos","ery-ai-demo-restaurang"]'
+          REPOS='["eryai-dashboard","eryai-engine","eryai-monitoring","eryai-sales","eryai-tech","eryai-demos","ery-ai-demo-restaurang","mimre"]'
           echo "repos=$REPOS" >> $GITHUB_OUTPUT
       
       - name: Upload artifacts
