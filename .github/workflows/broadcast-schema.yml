@@ -84,7 +84,7 @@ jobs:
           git clone "https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git" spoke-repo
           cd spoke-repo
           
-          # 3. Fix package.json (restore first if corrupt, then inject)
+          # 3. Fix package.json (restore first if corrupt, then inject dependencies)
           if [ -f "package.json" ]; then
             if ! node -e "JSON.parse(require('fs').readFileSync('package.json'))" 2>/dev/null; then
               echo "Corrupted JSON detected, restoring..."
@@ -96,23 +96,84 @@ jobs:
               const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
               p.devDependencies = p.devDependencies || {};
               p.devDependencies.typescript = '^5.0.0';
+              p.dependencies = p.dependencies || {};
+              p.dependencies['next-swagger-doc'] = '^0.4.0';
+              p.dependencies['schemathesis'] = '^3.0.0';
+              p.dependencies['wait-on'] = '^7.2.0';
+              p.dependencies['promptfoo'] = '^0.80.0';
               fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
             "
           fi
 
-          # 4. Sync files
-          mkdir -p types .github/workflows
+          # 4. Sync types
+          mkdir -p types
           cp ../artifacts/types/database.types.ts types/database.types.ts
-          cp ../artifacts/templates/jsconfig.json jsconfig.json
-          cp ../artifacts/templates/ci.yml .github/workflows/ci.yml
           
-          # 5. Generate package-lock.json if missing
+          # 5. Sync jsconfig if exists
+          if [ -f "../artifacts/templates/jsconfig.json" ]; then
+            cp ../artifacts/templates/jsconfig.json jsconfig.json
+          fi
+          
+          # 6. Sync CI workflow (with fingerprint check)
+          mkdir -p .github/workflows
+          if [ -f ".github/workflows/ci.yml" ]; then
+            if grep -q "ERYAI_AUTO_GENERATED" .github/workflows/ci.yml || grep -q "ERYAI_CUSTOM_IMPLEMENTATION" .github/workflows/ci.yml; then
+              if grep -q "ERYAI_CUSTOM_IMPLEMENTATION" .github/workflows/ci.yml; then
+                echo "Skipping ci.yml - custom implementation detected"
+              else
+                cp ../artifacts/templates/ci.yml .github/workflows/ci.yml
+              fi
+            else
+              # No fingerprint found, add it
+              cp ../artifacts/templates/ci.yml .github/workflows/ci.yml
+            fi
+          else
+            cp ../artifacts/templates/ci.yml .github/workflows/ci.yml
+          fi
+          
+          # 7. Sync API templates (with fingerprint check)
+          mkdir -p pages/api
+          
+          # Health endpoint
+          if [ -f "pages/api/health.js" ]; then
+            if grep -q "ERYAI_CUSTOM_IMPLEMENTATION" pages/api/health.js; then
+              echo "Skipping health.js - custom implementation detected"
+            else
+              cp ../artifacts/templates/pages/api/health.js pages/api/health.js
+            fi
+          else
+            cp ../artifacts/templates/pages/api/health.js pages/api/health.js
+          fi
+          
+          # OpenAPI endpoint
+          if [ -f "pages/api/openapi.js" ]; then
+            if grep -q "ERYAI_CUSTOM_IMPLEMENTATION" pages/api/openapi.js; then
+              echo "Skipping openapi.js - custom implementation detected"
+            else
+              cp ../artifacts/templates/pages/api/openapi.js pages/api/openapi.js
+            fi
+          else
+            cp ../artifacts/templates/pages/api/openapi.js pages/api/openapi.js
+          fi
+          
+          # 8. Sync Promptfoo config (with fingerprint check)
+          if [ -f "promptfooconfig.yaml" ]; then
+            if grep -q "ERYAI_CUSTOM_IMPLEMENTATION" promptfooconfig.yaml; then
+              echo "Skipping promptfooconfig.yaml - custom implementation detected"
+            else
+              cp ../artifacts/templates/promptfooconfig.yaml promptfooconfig.yaml
+            fi
+          else
+            cp ../artifacts/templates/promptfooconfig.yaml promptfooconfig.yaml
+          fi
+          
+          # 9. Generate package-lock.json if missing
           if [ -f "package.json" ] && [ ! -f "package-lock.json" ]; then
             echo "Generating package-lock.json..."
             npm install --package-lock-only
           fi
           
-          # 6. Git config & Push
+          # 10. Git config & Push
           git config user.name "EryAI Schema Bot"
           git config user.email "bot@eryai.tech"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/eryai-tech/${{ matrix.repo }}.git"
