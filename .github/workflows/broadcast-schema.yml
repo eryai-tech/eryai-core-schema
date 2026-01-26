@@ -104,6 +104,9 @@ jobs:
               delete p.devDependencies['schemathesis'];
               fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
             "
+            
+            # Remove package-lock.json to force regeneration
+            rm -f package-lock.json
           fi
 
           # 4. Sync types
