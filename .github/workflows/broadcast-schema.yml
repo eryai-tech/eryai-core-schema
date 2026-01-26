@@ -98,9 +98,7 @@ jobs:
               p.devDependencies.typescript = '^5.0.0';
               p.dependencies = p.dependencies || {};
               p.dependencies['next-swagger-doc'] = '^0.4.0';
-              p.dependencies['schemathesis'] = '^3.0.0';
               p.dependencies['wait-on'] = '^7.2.0';
-              p.dependencies['promptfoo'] = '^0.80.0';
               fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
             "
           fi
