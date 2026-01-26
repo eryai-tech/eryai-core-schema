@@ -16,6 +16,8 @@ lib/supabase-server.js
 lib/supabase.js
 middleware.js
 next.config.js
+pages/api/health.js
+pages/api/openapi.js
 postcss.config.js
 tailwind.config.js
 types/database.types.ts
@@ -23,8 +25,10 @@ types/database.types.ts
 
 ## 🔌 API Endpoints
 ```
+/api/health
 /api/leads
 /api/leads/[id]
+/api/openapi
 ```
 
 ## 📦 Key Exports

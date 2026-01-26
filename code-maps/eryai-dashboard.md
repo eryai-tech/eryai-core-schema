@@ -27,6 +27,8 @@ lib/supabase.js
 lib/usePushNotifications.js
 middleware.js
 next.config.js
+pages/api/health.js
+pages/api/openapi.js
 postcss.config.js
 public/sw.js
 tailwind.config.js
@@ -37,7 +39,9 @@ types/database.types.ts
 ```
 /api/admin/teams
 /api/admin/users
+/api/health
 /api/messages
+/api/openapi
 /api/push/send
 /api/push/subscribe
 /api/reply

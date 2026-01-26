@@ -13,7 +13,9 @@ pages/api/_lib/notifications/push.js
 pages/api/_lib/rateLimit.js
 pages/api/chat.js
 pages/api/greeting.js
+pages/api/health.js
 pages/api/messages.js
+pages/api/openapi.js
 pages/api/typing.js
 types/database.types.ts
 ```
@@ -30,7 +32,9 @@ types/database.types.ts
 /api/_lib/rateLimit
 /api/chat
 /api/greeting
+/api/health
 /api/messages
+/api/openapi
 /api/typing
 ```
 
