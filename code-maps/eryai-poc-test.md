@@ -10,6 +10,7 @@ lib/logger.js
 lib/mistral.js
 lib/rateLimit.js
 lib/securityJudge.js
+lib/setup.js
 server.js
 ```
 
